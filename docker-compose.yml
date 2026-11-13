@@ -1,0 +1,25 @@
+services:
+  api:
+    build: .
+    container_name: water-quality-api
+    ports:
+      - "8000:8000"
+    depends_on:
+      example-site:
+        condition: service_healthy
+    restart: unless-stopped
+
+  example-site:
+    image: nginx:1.27-alpine
+    container_name: water-quality-example-site
+    volumes:
+      - ./example-site:/usr/share/nginx/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/list/index.html"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
