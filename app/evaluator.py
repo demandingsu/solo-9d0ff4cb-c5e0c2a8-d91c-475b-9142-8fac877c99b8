@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 from .parser import DetailRecord
 from .schemas import IndicatorResult, LimitSpec
-from .units import UnitError, convert_value, normalize_unit, split_quantity
+from .units import UnitError, convert_value, split_quantity
 
 # 结论常量
 OVER = "超限"
@@ -151,6 +151,47 @@ def evaluate_indicator(
     return base
 
 
+def evaluate_approved(
+    approved_value: float,
+    approved_unit: str,
+    limit: Optional[LimitSpec],
+) -> tuple:
+    """用复核核准值替换原实测值，按现有限值重新判定。
+
+    返回 ``(converted_value, conclusion, note)``。复核值单位仅支持
+    mg/L / μg/L；限值缺失或单位无法折算时结论为待核实。
+    """
+    if limit is None:
+        return None, REVIEW, "该指标没有可用限值，无法判定复核值"
+    try:
+        converted = convert_value(approved_value, approved_unit, limit.unit)
+    except UnitError as exc:
+        return None, REVIEW, str(exc)
+    if converted > limit.value:
+        return (
+            converted,
+            OVER,
+            f"复核值 {approved_value:g}{approved_unit} 折算 {converted:g}"
+            f"{limit.unit} > 上限 {limit.value:g}{limit.unit}",
+        )
+    return (
+        converted,
+        WITHIN,
+        f"复核值 {approved_value:g}{approved_unit} 折算 {converted:g}"
+        f"{limit.unit} ≤ 上限 {limit.value:g}{limit.unit}",
+    )
+
+
+def sample_conclusion(indicator_conclusions: List[str]) -> str:
+    """水样级汇总：超限优先，其次待核实，否则未超限。"""
+    conclusions = set(indicator_conclusions)
+    if OVER in conclusions:
+        return SAMPLE_RECHECK
+    if REVIEW in conclusions:
+        return SAMPLE_REVIEW
+    return SAMPLE_WITHIN
+
+
 def build_limit_index(limits: List[LimitSpec]) -> Dict[str, LimitSpec]:
     """按归一化指标名建立限值索引。"""
     index: Dict[str, LimitSpec] = {}
@@ -201,19 +242,14 @@ def aggregate_samples(
                 continue
             indicator_results.append(evaluate_indicator(rec, spec, source_url))
 
-        conclusions = {r.conclusion for r in indicator_results}
-        if OVER in conclusions:
-            sample_conclusion = SAMPLE_RECHECK
-        elif REVIEW in conclusions:
-            sample_conclusion = SAMPLE_REVIEW
-        else:
-            sample_conclusion = SAMPLE_WITHIN
+        conclusions = [r.conclusion for r in indicator_results]
+        summary = sample_conclusion(conclusions)
 
         samples.append(
             {
                 "sample_code": code,
                 "sampling_point": points[code],
-                "conclusion": sample_conclusion,
+                "conclusion": summary,
                 "detail_url": source_url,
                 "indicators": [r.model_dump() for r in indicator_results],
             }

@@ -1,25 +1,41 @@
 services:
   api:
     build: .
+    image: water-quality-app:local
     container_name: water-quality-api
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      WQ_DB_PATH: /srv/data/water_quality.db
+    volumes:
+      - water-data:/srv/data
     ports:
       - "8000:8000"
     depends_on:
       example-site:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   example-site:
-    image: nginx:1.27-alpine
+    build: .
+    image: water-quality-app:local
     container_name: water-quality-example-site
-    volumes:
-      - ./example-site:/usr/share/nginx/html:ro
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    command:
+      ["uvicorn", "example_site.main:app", "--host", "0.0.0.0", "--port", "80"]
+    environment:
+      EXAMPLE_SITE_DIR: /srv/example-site
     ports:
       - "8080:80"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/list/index.html"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1/control/state')"]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
+
+volumes:
+  water-data:

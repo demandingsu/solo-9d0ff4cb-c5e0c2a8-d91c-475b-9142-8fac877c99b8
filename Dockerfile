@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    WQ_DB_PATH=/srv/data/water_quality.db
 
 WORKDIR /srv
 
@@ -9,6 +10,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY example_site ./example_site
+COPY example-site ./example-site
+
+RUN mkdir -p /srv/data
 
 EXPOSE 8000
 
